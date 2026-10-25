@@ -1,64 +1,159 @@
-# Synthetic NSW EV charging time series (COMP5339 Assignment 2)
+# Synthetic Dataset Generation
 
-Calibrated synthetic data for EV fast chargers: hourly **dynamic prices**, **charging sessions**
-(start/end/duration/kWh/power), and **per-minute meter telemetry** (voltage, current, kW, kWh, SoC).
+COMP5339 Assignment 2 — Task 1.
 
-## Quick start
-```bash
-python generate_dataset.py --stations demo_stations.csv --start 2026-10-01 --days 14 --out data
-```
-The generator uses only the Python standard library. It downloads real AEMO NSW wholesale prices 
-for the chosen months and caches them in `data/aemo_cache/`.
+This package contains the code **and completed datasets** for 30 Assignment 1 DC
+charger records over 1–14 September 2026. The supplied generator's model is used
+with documented adaptations and real AEMO NSW wholesale prices. The full dataset
+is in `data/final_dynamic/`; there is no need to generate it again before inspection.
 
-## Outputs (`data/`)
-| File | Content |
+## Results
+
+| Measure | Delivered result |
+|---|---:|
+| Selected A1 charger records | 30: 19 urban-proxy, 11 regional-proxy |
+| Assumed independent connectors | 103 |
+| Hourly prices | 10,080 = 30 × 14 × 24 |
+| Charging sessions | 4,007 |
+| Session-start messages | 4,007 |
+| Session-end messages | 4,007 |
+| One-minute meter readings | 113,765 |
+| Initial/changed-price messages | 6,360 |
+| Combined publishing messages | 128,139 |
+| Data validation | PASS, zero errors |
+| Regression tests | 21 passed |
+
+The rubric's “about 4,000 charging events” is interpreted here as **charging
+sessions**: 4,007 sessions are 0.175% above 4,000. Session-start/end messages and
+meter readings are counted separately, so this is not a claim of 4,000 total MQTT
+messages. See `docs/RUBRIC_ALIGNMENT.md` for the interpretation and evidence.
+
+## Use the included data
+
+| File in `data/final_dynamic/` | Purpose |
 |---|---|
-| `stations.csv` | id, name, lat, lon, site\_type (urban/regional), connectors, max\_kw, base\_price |
-| `prices_hourly.csv` | ts, station\_id, price\_per\_kwh, wholesale\_per\_kwh |
-| `sessions.csv` | session\_id, station, connector, vehicle\_model, start\_ts, charge\_end\_ts, end\_ts, charge\_minutes, energy\_kwh, avg\_kw, peak\_kw, price\_per\_kwh, cost\_aud |
-| `session_metering.csv` | time-ordered meter telemetry data: ts, station\_id, connector\_id, session\_id, volatge\_v, current\_a, power\_kw, energy\_kwh, soc\_pct |
+| `stations.csv` | Selected charger attributes and simulated base tariffs |
+| `prices_hourly.csv` | Complete hourly dynamic-price table |
+| `sessions.csv` | Sessions, start/charging-end/unplug times, energy and bills |
+| `session_metering.csv` | One-minute power/current/voltage/energy/SoC readings |
+| `events.csv` | Globally ordered price/start/meter/end stream for Task 2 |
+| `selected_station_crosswalk.csv` | Source identity, address, operator and SA4 for the 30 records |
+| JSON reports | Source coverage, settings, sampling, hashes and validation |
 
-## Using real NRMA charger locations
-`demo_stations.csv` uses **town-centre coordinates**, not real charger sites. To use real sites,
-supply a CSV with the same columns from the ev-charger dataset already used in Assignment 1.
+`data/demo_dynamic/` contains a separately labelled **127-message** demonstration
+with five complete sessions at two of the selected stations. At a 0.1-second gap,
+the full stream takes at least 3.56 hours; the short demo takes at least 12.6 seconds.
+Use a longer gap for a slower presentation. Read `docs/TASK2_HANDOFF.md` before
+publishing either stream.
 
-## How it is modelled and calibrated
-**Prices.** NRMA does **not** use time-of-use or dynamic pricing. It charges a flat $/kWh by charger
-power (about $0.54–0.60 up to 150 kW, $0.59–0.65 at 175 kW and above, $0.41–0.45 AC; members get about
-10% off). Since April 2025 it has also used *location-based* prices, up to about $0.79/kWh.
-The generator therefore models a **hypothetical dynamic tariff**:
-`price = station_base + pass_through × (hourly AEMO NSW1 RRP − period mean) + $0.10 (4–9pm)`,
-clipped to $0.20–1.20/kWh. This range matches real Australian time-of-use schemes: the Chargefox SA
-trial charged $0.12–1.20/kWh, and Tesla Superchargers range from about $0.43 to $0.69. Use `--static-prices` for NRMA-style flat prices.
+## Check or run the code
 
-**Sessions.** Starts follow a non-homogeneous Poisson process per connector:
-- **Hourly shape:** taken from the ARENA charts. Starts are mostly mid-day, and urban sites get a weekday 6–10pm bump.
-- **Volume:** 4 sessions per connector per day at urban sites and 3 at regional sites (configurable).
-- **Price response:** demand changes with the price ratio, with elasticity −0.5.
-- **Busy connectors:** a driver who arrives at an occupied connector goes elsewhere.
+Use Python 3.9 or later; this package was generated and tested with Python 3.12.14.
+No pip packages are required. Open a terminal in `synthetic_dataset_generation`.
 
-**Charging physics.** Each session uses one vehicle from an approximate Australian fleet mix
-(battery size, maximum DC kW, 400 V or 800 V architecture). It arrives at 20–55% state of charge and
-targets about 74%. Power is limited by the charger's rating, the charger's current limit, the vehicle's
-taper curve above 50% SoC, and a real-world derating factor. Pack voltage rises with SoC, and current = P/V.
+Validate the included dataset:
 
-**Calibration check** (14 days, 20 stations, seed 5339) against the ARENA 2023 averages:
+```bash
+python3 -m scripts.validate_outputs --data data/final_dynamic --aemo-cache data/aemo_cache
+```
 
-| | generated | ARENA 2023 |
-|---|---|---|
-| urban | 26.0 min / 25.8 kWh | 27.3 min / 27.0 kWh |
-| regional | 24.8 min / 25.2 kWh | 25.9 min / 24.5 kWh |
+Run the tests:
 
-Caveat: the hourly start profile, the fleet mix and the derating are approximations read from charts
-or estimated. They are not published figures.
+```bash
+python3 -m unittest discover -s tests -v
+```
 
-## Real (non-synthetic) alternatives
-- **Caltech ACN-Data**: real sessions with charging-current and pilot-signal time series. These are
-  US Level-2 AC chargers, not DC fast chargers. Free API token; Python client `acnportal`. https://ev.caltech.edu/dataset
-- **Perth & Kinross Council (Scotland)**: session-level data (start, end, kWh). IEEE DataPort, DOI 10.21227/3dbt-2v65
-- **AEMO price & demand**: real 5-minute NSW wholesale prices, used here. https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem/data-nem/aggregated-data
+Generate another copy using the included AEMO cache:
 
-## Sources
-- ARENA / Energeia, *Insights from Ultra-Fast Charging Network Data (Update)*, Aug 2023 (CC BY 3.0 AU): https://arena.gov.au/knowledge-bank/insights-from-ultra-fast-charging-network-data
-- NRMA EV charging prices: https://mynrma.com.au/ev ; location-based pricing: https://zecar.com/reviews/nrma-ev-charging-network-introduces-tap-n-pay-and-location-based-pricing-at-some-locations
-- Chargefox time-of-use trial: https://4x4australia.com.au/news/chargefox-trials-wild-fluctuating-ev-charging-prices
+```bash
+python3 generate_synthetic_dataset.py --cache-only --out data/rerun_dynamic
+```
+
+Success ends with `Validation: PASS; errors=0`. Use a new output directory for
+each run; existing generated CSVs are protected from overwrite. Running the main
+script with no arguments writes to `data/generated`, leaving the included dataset
+in `data/final_dynamic` intact. Allow at least 300 MB of free space for output and
+temporary sorting. Exact seeded results depend on the same inputs and Python version.
+
+The explicit command for the included run was:
+
+```bash
+python3 generate_synthetic_dataset.py --mode dynamic --start 2026-09-01 --days 14 --station-count 30 --selection-seed 5339 --seed 5339 --sessions-per-connector-day 3.434 2.576 --meter-every 1 --cache-only --out data/final_dynamic
+```
+
+The bundled `data/final_dynamic` already exists, so choose a different `--out`
+when rerunning that command.
+
+Preparation and selection only:
+
+```bash
+python3 generate_synthetic_dataset.py --mode prepare
+```
+
+For an updated A1 snapshot, use `--input path/to/updated_A1.csv`. Use
+`--station-count 0` to simulate every valid DC candidate, or another positive count
+for a different subset. These changes alter the dataset size and require a new run.
+An actual complete, unique A1 database key can be supplied using `--id-column`;
+the sparse source `OBJECTID` is not suitable. The adapter expects the documented A1
+schema. Do not silently rename unrelated input fields to force a match.
+
+## Selection and parameter choices
+
+The A1 snapshot contains 1,951 records: 432 DC, 1,421 AC and 98 upcoming. Five DC
+records with unresolved mixed ratings are documented and excluded, leaving 427
+valid DC candidates. The supplied model describes DC fast charging, so AC and
+upcoming records are outside the simulation scope.
+
+Thirty candidates are sampled without replacement, proportionally across the
+urban/regional proxy groups, using seed 5339. The selected records have 30 distinct
+coordinate pairs. Source IDs and attributes are retained; there is no manually
+chosen station list. `data/prepared/selection_report.json` records the exact sample
+and its hashes. This is a reproducible modelling subset, not a claim of statistical
+representativeness for all NSW charging activity.
+
+Fourteen days include two complete weeks and produce 10,080 hourly rows. A single
+pilot at the supplied arrival rates of 4/3 per connector/day produced 4,659 sessions.
+Scaling those rates by 4,000/4,659 and rounding to three decimals gives **3.434 urban
+and 2.576 regional**. The final fixed-seed run naturally produced 4,007 sessions;
+none were trimmed, duplicated or added to force the count. This controls synthetic
+data volume; it is not calibration against measured local demand.
+
+The September 2026 NSW1 AEMO file is the recent complete-month wholesale source.
+All 4,032 required five-minute intervals passed coverage checks. Twelve interval-
+ending prices are averaged per hour and divided by 1,000 to convert AUD/MWh to
+AUD/kWh. No missing observations are imputed.
+
+The inherited hypothetical retail formula uses the station base tariff plus the
+hourly wholesale deviation from the period mean, with a $0.10/kWh adder for
+16:00 ≤ hour < 21:00, clipped to $0.20–$1.20/kWh. The supplied fleet, taper and
+hourly demand profiles are retained; implementation changes are listed in
+`docs/GENERATOR_CHANGES.md`. Timestamps use fixed AEST `+10:00`. The starting retail
+tariff is locked for the session; occupancy lasts until unplug. One-minute meters
+include terminal readings, including when a session finishes after the start window.
+
+## Project files
+
+- `generate_synthetic_dataset.py`: preparation, sampling, generation, events and QA.
+- `generate_validated.py`: documented adaptation of the supplied model.
+- `provided/`: original university code and documentation, preserved unchanged.
+- `scripts/`: preparation, sampling, AEMO coverage, event ordering, validation and demo.
+- `tests/`: generator and sampling regression tests; manufactured fixtures remain temporary.
+- `data/assignment1/`: original source snapshot.
+- `data/prepared/`: candidate list, selected list, crosswalks, exclusions and sampling audit.
+- `data/aemo_cache/`: original downloaded September AEMO CSV.
+- `data/final_dynamic/`: completed Task 1 dataset and reports.
+- `data/demo_dynamic/`: short Task 2 presentation sample.
+- `docs/`: rubric mapping, report material, schemas, changes, status and AI/source notes.
+- `qa/`: actual run/test logs and volume-calibration evidence.
+
+## GitHub and the team handoff
+
+Extract the ZIP and upload the whole `synthetic_dataset_generation` folder,
+preserving its subfolders. The complete final data is included. `.gitignore`
+tracks this documented run while excluding later ad hoc output folders.
+
+Task 2 receives `data/final_dynamic/` and `docs/TASK2_HANDOFF.md`. The group still
+needs MQTT publication, the dashboard, DuckDB integration, its report and AI-use
+declaration. Match the selected IDs to the actual A1 database using the supplied
+crosswalk. Connector standards are absent from this snapshot and must come from
+the team's augmented metadata. See `docs/STATUS.md` for remaining integration reviews.
