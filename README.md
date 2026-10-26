@@ -46,6 +46,23 @@ the full stream takes at least 3.56 hours; the short demo takes at least 12.6 se
 Use a longer gap for a slower presentation. Read `docs/TASK2_HANDOFF.md` before
 publishing either stream.
 
+## Assignment 1 project cross-check
+
+The subsequently uploaded `DataEngineering-main-2.zip` was checked on 26 October
+2026. Its 1,951-row `ev_chargers_with_sa4.csv` is byte-for-byte identical to the
+generator input. All 30 selected chargers also match the current augmented CSV
+and have one unique corresponding record in the uploaded DuckDB database.
+The generated dataset does not need to be regenerated for this source check.
+
+The uploaded database is inconsistent with the current CSVs: it contains 1,958
+charger rows, records a different input hash, and has no SA4 polygon geometries.
+Resolve that database version before final group integration. The verified
+`data/assignment1/selected_database_bridge.csv` maps the existing synthetic IDs
+to the **checked database snapshot only**; a rebuild can change database IDs.
+`data/assignment1/selected_augmented_metadata.csv` supplies available dashboard
+metadata, including plug types for 5 of 30 selected chargers. The other 25 remain
+unknown. See `docs/ASSIGNMENT1_COMPATIBILITY.md` for evidence and next steps.
+
 ## Check or run the code
 
 Use Python 3.9 or later; this package was generated and tested with Python 3.12.14.
@@ -154,6 +171,7 @@ tracks this documented run while excluding later ad hoc output folders.
 
 Task 2 receives `data/final_dynamic/` and `docs/TASK2_HANDOFF.md`. The group still
 needs MQTT publication, the dashboard, DuckDB integration, its report and AI-use
-declaration. Match the selected IDs to the actual A1 database using the supplied
-crosswalk. Connector standards are absent from this snapshot and must come from
-the team's augmented metadata. See `docs/STATUS.md` for remaining integration reviews.
+declaration. The supplied database bridge verifies IDs for the uploaded A1 database
+snapshot; reconcile that database with the final A1 CSVs and recheck the bridge if
+it is rebuilt. Use the selected augmented metadata for available connector standards,
+and show unavailable values explicitly. See `docs/STATUS.md` for remaining reviews.
